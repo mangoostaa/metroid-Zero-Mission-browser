@@ -57,6 +57,81 @@ void CpuFastSet(void *src, void *dst, uint16_t ctl)
     for (uint32_t i = 0; i < n; i++) d[i] = s[i];
 }
 
+/* --- DMA (replace the register-poking DMA_SET macro from gba/dma.h) --------------
+ * On hardware the DMA_SET macro writes src/dst/count to the DMA registers and the
+ * DMA controller performs the transfer. There is no controller here, so gba/dma.h
+ * routes DMA_SET to this function under TARGET_WEB and we perform the copy/fill
+ * directly. This is what actually flushes shadow OAM (gOamData) and palette/VRAM to
+ * the relocated buffers each frame, so sprites and scroll updates become visible.
+ *
+ * `cnt` is C_32_2_16(control, count): high 16 = DMA control flags, low 16 = unit
+ * count (0 means 0x10000 on channel 3, the max). We only run immediate transfers;
+ * VBlank/HBlank/special-timed and FIFO DMA (audio) are left to their subsystems. */
+#define DMA_WEB_ENABLE    (1u << 15)
+#define DMA_WEB_32BIT     (1u << 10)
+#define DMA_WEB_SRC_FIXED (1u << 8)
+#define DMA_WEB_START_MSK (3u << 12)
+
+/* True if [p, p+n) lies inside one of the relocated GBA regions. DMA on hardware
+ * targets the GBA address space; in this port those regions are the gGba* buffers.
+ * A transfer whose endpoint is NOT in that space is an artifact of the decomp
+ * passing a bare GBA address (e.g. a ROM offset such as 0x1) that is a bogus host
+ * pointer — on hardware it would hit ROM, here it would read/write garbage, so we
+ * leave it alone. Such transfers were a silent no-op before this backend emulated
+ * DMA, and the game booted and rendered fine, so skipping them is the safe choice. */
+static int gba_region(const void *p, size_t n)
+{
+    const unsigned char *q = (const unsigned char *)p;
+    const struct { const unsigned char *base; size_t len; } r[] = {
+        { gGbaEwram, sizeof gGbaEwram }, { gGbaIwram,  sizeof gGbaIwram  },
+        { gGbaIo,    sizeof gGbaIo    }, { gGbaPalram, sizeof gGbaPalram },
+        { gGbaVram,  sizeof gGbaVram  }, { gGbaOam,    sizeof gGbaOam    },
+        { gGbaSram,  sizeof gGbaSram  },
+    };
+    for (unsigned i = 0; i < sizeof r / sizeof r[0]; i++)
+        if (q >= r[i].base && q + n <= r[i].base + r[i].len)
+            return 1;
+    return 0;
+}
+
+void gba_dma_set(unsigned channel, const void *src, void *dst, unsigned cnt)
+{
+    unsigned count = cnt & 0xFFFF;
+    unsigned ctrl  = cnt >> 16;
+
+    if (!(ctrl & DMA_WEB_ENABLE))
+        return;                       /* channel disabled */
+    if (ctrl & DMA_WEB_START_MSK)
+        return;                       /* scheduled/FIFO DMA — not an immediate copy */
+
+    unsigned unit  = (ctrl & DMA_WEB_32BIT) ? 4u : 2u;
+    unsigned units = count ? count : (channel == 3 ? 0x10000u : 0x4000u);
+    size_t   bytes = (size_t)units * unit;
+    int      fill  = (ctrl & DMA_WEB_SRC_FIXED) != 0;
+
+    /* Emulate transfers landing in the mapped GBA address space (this bounds every
+     * write to a real relocated buffer). A legit copy's SOURCE is often an ordinary
+     * game buffer outside those regions (e.g. the shadow OAM gOamData), so we don't
+     * require src to be mapped — only that it is a plausible host pointer, which
+     * rejects the decomp's bare GBA/ROM offsets (0x1, 0x2, …) that are bogus here. */
+    if (!gba_region(dst, bytes))
+        return;
+    if (!fill && (uintptr_t)src < 0x1000u)
+        return;
+
+    if (fill) {
+        if (unit == 4) {
+            uint32_t v = *(const uint32_t *)src, *d = dst;
+            for (unsigned i = 0; i < units; i++) d[i] = v;
+        } else {
+            uint16_t v = *(const uint16_t *)src, *d = dst;
+            for (unsigned i = 0; i < units; i++) d[i] = v;
+        }
+    } else {
+        memcpy(dst, src, bytes);
+    }
+}
+
 int32_t DivarmDiv(int32_t number, int32_t denom) { return denom ? number / denom : 0; }
 int32_t DivarmMod(int32_t denom, int32_t number) { return denom ? number % denom : 0; }
 

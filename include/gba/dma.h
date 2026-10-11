@@ -43,6 +43,21 @@
         dma_[2];                                                               \
     }
 
+#ifdef TARGET_WEB
+/* No DMA controller on the web backend — perform the transfer directly.
+ * (src/web/gba_hle.c) This replaces the register-write macro above, which would
+ * otherwise be a no-op and leave shadow OAM / palette / VRAM never flushed.
+ * Kept as a brace-block statement so it stays a drop-in for call sites that use
+ * the macro without a trailing semicolon (e.g. the per-frame OAM flushes). */
+void gba_dma_set(unsigned channel, const void *src, void *dst, unsigned cnt);
+#undef DMA_SET
+#define DMA_SET(channel, src, dst, cnt)                                        \
+    {                                                                          \
+        gba_dma_set((unsigned)(channel), (const void *)(src), (void *)(dst),   \
+                    (unsigned)(cnt));                                          \
+    }
+#endif /* TARGET_WEB */
+
 #define DMA3_COPY_16(src, dst, count)                                          \
     DMA_SET(3, src, dst, C_32_2_16(DMA_ENABLE, count))
 #define DMA3_COPY_32(src, dst, count)                                          \
