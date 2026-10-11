@@ -6,7 +6,16 @@
 #define REG_IME (REG_BASE + 0x208)
 #define REG_IE (REG_BASE + 0x200)
 #define REG_IF (REG_BASE + 0x202)
+#ifdef TARGET_WEB
+/* No scanline hardware: the game spin-waits on VCOUNT to reach/leave a line
+ * (in_game.c room load, audio_wrappers, erase_sram). With a static VCOUNT those
+ * loops hang. gba_vcount_addr() (src/web/gba_hle.c) returns a slot holding a
+ * free-running 0..227 counter that advances on every read, so each wait ends. */
+const volatile void *gba_vcount_addr(void);
+#define REG_VCOUNT (gba_vcount_addr())
+#else
 #define REG_VCOUNT (REG_BASE + 0x006)
+#endif
 
 #define IF_VBLANK  (1 << 0)
 #define IF_HBLANK  (1 << 1)

@@ -22,6 +22,15 @@
  */
 void ClipdataSetupCode(void)
 {
+#ifdef TARGET_WEB
+    /* Port: the original copies this function's Thumb machine code into RAM and
+     * calls it there (speed hack). wasm function pointers are table indices, not
+     * addresses, so a RAM copy is uncallable ("table index is out of bounds").
+     * BUGFIX already makes ClipdataConvertToCollision jump-table-free, so just
+     * point at the real function. */
+    gClipdataCodePointer = (ClipFunc_T)ClipdataConvertToCollision;
+    return;
+#endif
     // Copy code to RAM
     DMA3_COPY_16(ClipdataConvertToCollision + 1, gNonGameplayRam.inGame.clipdataCode, sizeof(gNonGameplayRam.inGame.clipdataCode) / 2);
 

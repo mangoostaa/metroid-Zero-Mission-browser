@@ -132,6 +132,16 @@ void gba_dma_set(unsigned channel, const void *src, void *dst, unsigned cnt)
     }
 }
 
+/* Free-running VCOUNT: no scanline hardware exists, but the game spin-waits on
+ * VCOUNT reaching/leaving a line. Hand back a slot that marches 0..227 on every
+ * read so each such wait terminates. (gba/interrupt.h maps REG_VCOUNT here.) */
+const volatile void *gba_vcount_addr(void)
+{
+    static uint16_t vc = 0;
+    if (++vc >= 228) vc = 0;
+    return &vc;
+}
+
 int32_t DivarmDiv(int32_t number, int32_t denom) { return denom ? number / denom : 0; }
 int32_t DivarmMod(int32_t denom, int32_t number) { return denom ? number % denom : 0; }
 

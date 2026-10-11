@@ -139,9 +139,15 @@ void unk_5d09c(void)
     }
 }
 
+#ifdef TARGET_WEB
+/* No-op haze processor (see HazeSetupCode): correctly typed HazeFunc_T so the
+ * indirect call never traps. Returns 0 = "not ended". */
+static u32 HazeProcessWebNoop(void) { return 0; }
+#endif
+
 /**
  * @brief 5d118 | 2ba | Sets up code and values for a haze effect
- * 
+ *
  * @param hazeValue Haze value
  */
 void HazeSetupCode(HazeValue hazeValue)
@@ -269,6 +275,15 @@ void HazeSetupCode(HazeValue hazeValue)
             gCurrentHazeValue = HAZE_VALUE_NONE;
             break;
     }
+
+#ifdef TARGET_WEB
+    /* The branches above pointed gHazeProcessCodePointer at a RAM copy of the
+     * Haze_* HBlank code — uncallable in wasm (the real functions are typed
+     * void(void) while HazeFunc_T is u32(void), so even a direct pointer would
+     * trap on signature mismatch). The whole-frame software PPU cannot reproduce
+     * a per-scanline haze anyway, so route it to a correctly-typed no-op. */
+    gHazeProcessCodePointer = HazeProcessWebNoop;
+#endif
 }
 
 /**
