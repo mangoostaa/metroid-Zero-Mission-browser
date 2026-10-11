@@ -323,6 +323,42 @@ static void scene_blend_obj(void)
     chk(48,48, B, "semi OBJ, no 2nd target -> plain");
 }
 
+/* ===== Scene affine BG (mode 1, BG2) with overflow wrap on and off ========= */
+static void scene_affine_bg(void)
+{
+    printf("- affine BG (mode 1): wrap off / on:\n");
+    reset_mem();
+    palram()[0] = c555(0,0,31);                   /* backdrop blue */
+    palram()[1] = c555(31,0,0);                   /* red  */
+    palram()[2] = c555(0,31,0);                   /* green */
+    unsigned RED = c555(31,0,0), GRN = c555(0,31,0), BLU = c555(0,0,31);
+
+    unsigned charBase = 1 * 0x4000;               /* 8bpp tiles here */
+    for (int i = 0; i < 64; i++) gGbaVram[charBase + 1*64 + i] = 1;   /* tile1 solid red */
+    for (int i = 0; i < 64; i++) gGbaVram[charBase + 2*64 + i] = 2;   /* tile2 solid green */
+    /* affine map: 16x16 tiles (size 0 -> 128x128 px), 1 byte/entry, screenBase 0 */
+    for (int ty = 0; ty < 16; ty++)
+        for (int tx = 0; tx < 16; tx++)
+            gGbaVram[ty * 16 + tx] = (tx == 0 && ty == 0) ? 1 : 2;    /* only (0,0) red */
+
+    wio16(IO_BGCNT(2), (uint16_t)CREATE_BGCNT(1, 0, 0, 0));           /* char1 screen0 prio0 size0 */
+    wio16(0x20, 0x0100); wio16(0x22, 0);          /* PA=1.0, PB=0 */
+    wio16(0x24, 0);      wio16(0x26, 0x0100);     /* PC=0, PD=1.0  (refX/refY = 0) */
+    wio16(IO_DISPCNT, (uint16_t)(DCNT_MODE_1 | DCNT_BG2));
+
+    gba_ppu_render_frame(fb);                     /* wrap OFF */
+    chk(4,4,     RED, "wrap off: texel(0,0)");
+    chk(12,4,    GRN, "wrap off: texel(1,0)");
+    chk(140,20,  BLU, "wrap off: x>=128 -> backdrop");
+    chk(4,140,   BLU, "wrap off: y>=128 -> backdrop");
+
+    wio16(IO_BGCNT(2), (uint16_t)(CREATE_BGCNT(1, 0, 0, 0) | (1 << 13))); /* overflow wrap on */
+    gba_ppu_render_frame(fb);
+    chk(4,4,     RED, "wrap on: texel(0,0)");
+    chk(140,20,  GRN, "wrap on: x wraps to 12");
+    chk(4,140,   GRN, "wrap on: y wraps to 12");
+}
+
 /* ===== Scene OBJ-map: 16x16 sprites, 4bpp & 8bpp, 1D vs 2D mapping, flips === */
 static void scene_obj_map(int map1d)
 {
@@ -409,6 +445,7 @@ int main(void)
     scene_blend_bg();
     scene_blend_bldy();
     scene_blend_obj();
+    scene_affine_bg();
 
     printf("\n%s  (%d checks failed)\n", g_fail ? "RESULT: FAIL" : "RESULT: PASS", g_fail);
     return g_fail ? 1 : 0;
