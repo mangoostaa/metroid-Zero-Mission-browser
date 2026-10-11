@@ -44,13 +44,14 @@ void gba_frame_tick(void)
     if (s_frame <= 3 || (s_frame % 60) == 0) { printf("[loop] frame %u\n", s_frame); fflush(stdout); }
 #endif
 #ifdef __EMSCRIPTEN__
-    emscripten_sleep(0);                  /* Asyncify: give the browser a turn */
+    emscripten_sleep(16);                  /* Asyncify: give the browser a turn */
 #endif
 }
 
 #ifdef __EMSCRIPTEN__
 EMSCRIPTEN_KEEPALIVE uint32_t gba_frame_count(void) { return s_frame; }
-/* Integration (orchestrator): expose the framebuffer so the JS shell / headless
- * boot harness can present or snapshot it (s_fb is otherwise file-static). */
+/* Exposed to the JS shell: the 240x160 RGBA framebuffer the PPU fills (the shell
+ * blits it to the canvas) and the input entry point. */
 EMSCRIPTEN_KEEPALIVE uint32_t *gba_framebuffer(void) { return s_fb; }
+EMSCRIPTEN_KEEPALIVE void gba_js_set_keys(uint16_t keyinput) { gba_set_keys(keyinput); }
 #endif

@@ -43,5 +43,7 @@ echo "compiled: $ok ok, $fail fail"
 
 # Asyncify lets the game yield to the browser at its VBlank waits.
 emcc @"$BUILD/objs.rsp" -sASYNCIFY -sALLOW_MEMORY_GROWTH=1 -sEXIT_RUNTIME=0 \
+     -sEXPORTED_FUNCTIONS=_main,_gba_framebuffer,_gba_frame_count,_gba_js_set_keys \
+     -sEXPORTED_RUNTIME_METHODS=HEAPU8,HEAPU32,ccall \
      -Wl,--error-limit=0 -o "$BUILD/mzm.js"
 echo "link exit $? -> $BUILD/mzm.js + mzm.wasm"

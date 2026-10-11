@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Metroid: Zero Mission — Web</title>
+<style>
+  :root { color-scheme: dark; }
+  body { margin: 0; background: #0b0b0f; color: #cfd2dc;
+         font: 14px/1.5 system-ui, sans-serif;
+         display: flex; flex-direction: column; align-items: center;
+         gap: 14px; padding: 24px 16px; }
+  h1 { font-size: 15px; font-weight: 600; margin: 0; }
+  #screen { width: 720px; max-width: 100%; aspect-ratio: 240 / 160;
+            image-rendering: pixelated; background: #000;
+            border: 1px solid #272a33; border-radius: 6px; }
+  #status { font-size: 12px; color: #8b90a0; min-height: 1.2em; }
+  .hint { font-size: 11px; color: #6b7080; text-align: center; max-width: 720px; }
+  kbd { background:#1a1c22; border:1px solid #30333d; border-radius:3px;
+        padding:0 4px; font-size:11px; }
+</style>
+</head>
+<body>
+  <h1>Metroid: Zero Mission — WebAssembly</h1>
+  <canvas id="screen" width="240" height="160"></canvas>
+  <div id="status">loading…</div>
+  <div class="hint">
+    <kbd>←↑↓→</kbd> move · <kbd>Z</kbd> A · <kbd>X</kbd> B · <kbd>A</kbd> L ·
+    <kbd>S</kbd> R · <kbd>Enter</kbd> Start · <kbd>Shift</kbd> Select.<br>
+    The screen stays black until the software PPU (Agent 1) is implemented — the
+    engine is already running underneath (watch the console frame counter).
+  </div>
+<script>
+  var Module = {
+    locateFile: function (p) { return 'build/' + p; },
+    print:    function (t) { console.log(t); },
+    printErr: function (t) { console.error(t); },
+    onRuntimeInitialized: function () { startShell(); },
+  };
+</script>
+<!-- SHELL_JS -->
+<script>
+  // GBA KEYINPUT is active-low (1 = released). Bit positions:
+  var KEY = { A:0, B:1, Select:2, Start:3, Right:4, Left:5, Up:6, Down:7, R:8, L:9 };
+  var MAP = {
+    KeyZ:'A', KeyX:'B', Enter:'Start', ShiftLeft:'Select', ShiftRight:'Select',
+    ArrowRight:'Right', ArrowLeft:'Left', ArrowUp:'Up', ArrowDown:'Down',
+    KeyS:'R', KeyA:'L',
+  };
+  var held = {};
+  function pushKeys() {
+    var v = 0x03FF; // all released
+    for (var c in held) if (held[c] && MAP[c]) v &= ~(1 << KEY[MAP[c]]);
+    if (Module._gba_js_set_keys) Module._gba_js_set_keys(v);
+  }
+  addEventListener('keydown', function (e) {
+    if (MAP[e.code]) { held[e.code] = true; pushKeys(); e.preventDefault(); }
+  });
+  addEventListener('keyup', function (e) {
+    if (MAP[e.code]) { held[e.code] = false; pushKeys(); e.preventDefault(); }
+  });
+
+  function startShell() {
+    var ctx = document.getElementById('screen').getContext('2d');
+    var img = ctx.createImageData(240, 160);
+    document.getElementById('status').textContent = 'running';
+    (function present() {
+      var ptr = Module._gba_framebuffer();                 // byte offset into wasm memory
+      if (ptr) {
+        img.data.set(Module.HEAPU8.subarray(ptr, ptr + 240 * 160 * 4));
+        ctx.putImageData(img, 0, 0);
+      }
+      requestAnimationFrame(present);
+    })();
+  }
+</script>
+<script src="build/mzm.js"></script>
+</body>
+</html>
