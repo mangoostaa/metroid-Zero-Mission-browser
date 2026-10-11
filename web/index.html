@@ -63,13 +63,15 @@
   function startShell() {
     var ctx = document.getElementById('screen').getContext('2d');
     var img = ctx.createImageData(240, 160);
-    document.getElementById('status').textContent = 'running';
+    var status = document.getElementById('status');
     (function present() {
       var ptr = Module._gba_framebuffer();                 // byte offset into wasm memory
       if (ptr) {
         img.data.set(Module.HEAPU8.subarray(ptr, ptr + 240 * 160 * 4));
         ctx.putImageData(img, 0, 0);
       }
+      // Live proof the engine is running even while the PPU is unimplemented.
+      if (Module._gba_frame_count) status.textContent = 'engine running · frame ' + Module._gba_frame_count();
       requestAnimationFrame(present);
     })();
   }
