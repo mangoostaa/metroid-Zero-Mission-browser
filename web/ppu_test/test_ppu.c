@@ -80,6 +80,25 @@ static void chk(int x, int y, unsigned expect555, const char *name) {
     else            { printf("  ok   %-28s (%3d,%3d) %08X\n", name, x, y, got); }
 }
 
+/* reference color-effect math (mirrors ppu.c) for computing expected values */
+static unsigned ablend(unsigned a, unsigned b, int eva, int evb) {
+    int r = ((a & 31) * eva + (b & 31) * evb) >> 4;
+    int g = (((a >> 5) & 31) * eva + ((b >> 5) & 31) * evb) >> 4;
+    int bl = (((a >> 10) & 31) * eva + ((b >> 10) & 31) * evb) >> 4;
+    if (r > 31) r = 31; if (g > 31) g = 31; if (bl > 31) bl = 31;
+    return (unsigned)(r | (g << 5) | (bl << 10));
+}
+static unsigned brighten(unsigned a, int evy) {
+    int r = a & 31, g = (a >> 5) & 31, b = (a >> 10) & 31;
+    r += ((31 - r) * evy) >> 4; g += ((31 - g) * evy) >> 4; b += ((31 - b) * evy) >> 4;
+    return (unsigned)(r | (g << 5) | (b << 10));
+}
+static unsigned darken(unsigned a, int evy) {
+    int r = a & 31, g = (a >> 5) & 31, b = (a >> 10) & 31;
+    r -= (r * evy) >> 4; g -= (g * evy) >> 4; b -= (b * evy) >> 4;
+    return (unsigned)(r | (g << 5) | (b << 10));
+}
+
 static uint16_t *objpalram(void) { return (uint16_t *)(gGbaPalram + 0x200); }
 static void obj_tile4_solid(int t, int nib) {
     unsigned char b = (unsigned char)((nib << 4) | nib);
@@ -244,6 +263,66 @@ static void scene_win_effect(void)
     chk(10,10, GRN,   "outside: darken disabled -> green");
 }
 
+/* ===== Scene blending: alpha between two BGs =============================== */
+static void scene_blend_bg(void)
+{
+    printf("- blending: alpha between two BGs:\n");
+    reset_mem(); two_bg_solid();
+    palram()[17] = c555(0,0,31);                  /* BG1 -> blue */
+    unsigned A = c555(31,0,0), B = c555(0,0,31);
+    wio16(0x50, (1 << 1) | (1 << 8) | (1 << 6));  /* BG1 first, BG0 second, alpha */
+    wio16(0x52, (8 << 8) | 8);                    /* eva=8 evb=8 */
+    wio16(IO_DISPCNT, (uint16_t)(DCNT_BG0 | DCNT_BG1));
+    gba_ppu_render_frame(fb);
+    chk(50,50, ablend(B, A, 8, 8), "alpha BG1 over BG0");
+}
+
+/* ===== Scene blending: BLDY brighten & darken ============================== */
+static void scene_blend_bldy(void)
+{
+    printf("- blending: BLDY brighten & darken:\n");
+    reset_mem();
+    palram()[0] = c555(2,2,2); palram()[1] = c555(16,16,16);
+    for (int i = 0; i < 32; i++) gGbaVram[i] = 0x11;
+    uint16_t *m = mapat(8 * 0x800); for (int i = 0; i < 32*32; i++) m[i] = 0;
+    wio16(IO_BGCNT(0), (uint16_t)CREATE_BGCNT(0, 8, 0, 0));
+    unsigned G = c555(16,16,16);
+    wio16(IO_DISPCNT, (uint16_t)DCNT_BG0);
+    wio16(0x54, 8);                               /* evy=8 */
+    wio16(0x50, (1 << 0) | (2 << 6));             /* BG0 first, brighten */
+    gba_ppu_render_frame(fb);
+    chk(50,50, brighten(G, 8), "BLDY brighten BG0");
+    wio16(0x50, (1 << 0) | (3 << 6));             /* BG0 first, darken */
+    gba_ppu_render_frame(fb);
+    chk(50,50, darken(G, 8), "BLDY darken BG0");
+}
+
+/* ===== Scene blending: semi-transparent OBJ (mode 1) over a BG ============= */
+static void scene_blend_obj(void)
+{
+    printf("- blending: semi-transparent OBJ over BG:\n");
+    reset_mem();
+    palram()[0] = c555(2,2,2); palram()[1] = c555(31,0,0);   /* BG0 red */
+    objpalram()[1] = c555(0,0,31);                           /* OBJ blue */
+    for (int i = 0; i < 32; i++) gGbaVram[i] = 0x11;
+    uint16_t *m = mapat(8 * 0x800); for (int i = 0; i < 32*32; i++) m[i] = 0;
+    wio16(IO_BGCNT(0), (uint16_t)CREATE_BGCNT(0, 8, 1, 0));   /* BG0 prio1 */
+    for (int t = 0; t < 4; t++) obj_tile4_solid(t, 1);       /* blue 16x16 sprite */
+    oam_set(0, 40 | (1 << 10) | (0 << 14), 40 | (1 << 14), 0); /* semi (mode1) prio0 @ (40,40) */
+    wio16(0x52, (8 << 8) | 8);
+    unsigned A = c555(31,0,0), B = c555(0,0,31);
+
+    wio16(0x50, (1 << 8));                        /* BG0 is a 2nd target -> semi obj blends */
+    wio16(IO_DISPCNT, (uint16_t)(DCNT_BG0 | DCNT_OBJ | DCNT_OBJ_1D));
+    gba_ppu_render_frame(fb);
+    chk(48,48, ablend(B, A, 8, 8), "semi OBJ blends with BG");
+    chk(10,10, A, "BG where no sprite");
+
+    wio16(0x50, 0);                               /* no 2nd target -> semi obj shown plain */
+    gba_ppu_render_frame(fb);
+    chk(48,48, B, "semi OBJ, no 2nd target -> plain");
+}
+
 /* ===== Scene OBJ-map: 16x16 sprites, 4bpp & 8bpp, 1D vs 2D mapping, flips === */
 static void scene_obj_map(int map1d)
 {
@@ -327,6 +406,9 @@ int main(void)
     scene_obj_misc();
     scene_win_mask();
     scene_win_effect();
+    scene_blend_bg();
+    scene_blend_bldy();
+    scene_blend_obj();
 
     printf("\n%s  (%d checks failed)\n", g_fail ? "RESULT: FAIL" : "RESULT: PASS", g_fail);
     return g_fail ? 1 : 0;
