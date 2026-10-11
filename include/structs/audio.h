@@ -269,10 +269,20 @@ extern struct MusicTrackInfo gMusicTrackInfo;
 extern struct MusicInfo gMusicInfo;
 
 // Linker variables
+#ifdef TARGET_WEB
+/* Port: these are linker.ld address-as-value constants (gNumMusicPlayers = 9, ...).
+ * wasm can't place a symbol at a fixed address, so expose them as the constants the
+ * code casts them to (every use is `(uN)gUnk...`). */
+#define gNumMusicPlayers    ((char *)9)
+#define gUnk_Audio0x64      ((char *)0x64)
+#define gUnk_Audio0x194F700 ((char *)0x194F700)
+#define gUnk_Audio0x50      ((char *)0x50)
+#else
 extern char gNumMusicPlayers[];
 extern char gUnk_Audio0x64[];
 extern char gUnk_Audio0x194F700[];
 extern char gUnk_Audio0x50[];
+#endif
 
 extern struct TrackData gTrackData8;
 extern struct TrackData gTrackData3;

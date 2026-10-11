@@ -50,4 +50,7 @@ void gba_frame_tick(void)
 
 #ifdef __EMSCRIPTEN__
 EMSCRIPTEN_KEEPALIVE uint32_t gba_frame_count(void) { return s_frame; }
+/* Integration (orchestrator): expose the framebuffer so the JS shell / headless
+ * boot harness can present or snapshot it (s_fb is otherwise file-static). */
+EMSCRIPTEN_KEEPALIVE uint32_t *gba_framebuffer(void) { return s_fb; }
 #endif

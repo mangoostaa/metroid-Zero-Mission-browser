@@ -110,11 +110,8 @@ __attribute__((weak)) uint8_t *CallSoundCodeB(uint32_t *a, uint32_t *b, uint32_t
 __attribute__((weak)) uint8_t *CallSoundCodeC(uint32_t *a, uint32_t *b, uint8_t c) { (void)a; (void)b; (void)c; return 0; }
 __attribute__((weak)) void IntrMain(void) {}
 
-/* Audio constants (linker.ld absolute symbols); u32 so LE low bytes read right as u8/u16. */
-uint32_t gNumMusicPlayers = 9;
-uint32_t gUnk_Audio0x64 = 0x64;
-uint32_t gUnk_Audio0x50 = 0x50;
-uint32_t gUnk_Audio0x194F700 = 0x194F700;
+/* Audio constants (gNumMusicPlayers, gUnk_Audio*) are provided as TARGET_WEB macros
+ * in structs/audio.h (linker.ld address-as-value constants). */
 
 /* More EWRAM arrays (linker.ld), sized to their regions. */
 unsigned int gUnk_02035400[0x800 / 4];
