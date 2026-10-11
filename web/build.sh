@@ -4,6 +4,12 @@
 set -u
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT" || exit 1
+# Make emcc available even if the caller didn't source emsdk first.
+command -v emcc >/dev/null 2>&1 || source "${EMSDK_ENV:-/c/tmp/emsdk/emsdk_env.sh}" >/dev/null 2>&1 || true
+if ! command -v emcc >/dev/null 2>&1; then
+  echo "error: emcc not found. Activate the Emscripten SDK (source .../emsdk_env.sh) or set EMSDK_ENV." >&2
+  exit 1
+fi
 BUILD="$ROOT/web/build"
 mkdir -p "$BUILD"
 : > "$BUILD/objs.rsp"; : > "$BUILD/compile.err"
@@ -38,7 +44,7 @@ while IFS= read -r f; do
   else
     fail=$((fail + 1)); echo "CFAIL $f" >> "$BUILD/compile.err"
   fi
-done < <(find src -name '*.c' | sort)
+done < <(find src -name '*.c' ! -path 'src/web/test_*' | sort)
 echo "compiled: $ok ok, $fail fail"
 
 # Asyncify lets the game yield to the browser at its VBlank waits.

@@ -35,7 +35,6 @@
     locateFile: function (p) { return 'build/' + p; },
     print:    function (t) { console.log(t); },
     printErr: function (t) { console.error(t); },
-    onRuntimeInitialized: function () { startShell(); },
   };
 </script>
 <!-- SHELL_JS -->
@@ -75,6 +74,12 @@
       requestAnimationFrame(present);
     })();
   }
+  // Don't depend on onRuntimeInitialized (unreliable while main() loops under
+  // Asyncify) — poll until the exports exist, then start presenting.
+  (function waitReady() {
+    if (window.Module && Module.HEAPU8 && Module._gba_framebuffer) startShell();
+    else setTimeout(waitReady, 60);
+  })();
 </script>
 <script src="build/mzm.js"></script>
 </body>
