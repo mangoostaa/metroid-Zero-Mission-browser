@@ -184,6 +184,66 @@ static void scene_b(void)
     wio16(IO_BGCNT(0), (uint16_t)(CREATE_BGCNT(0, 8, 0, 0) | (1 << 7)));  /* 256-colour */
 }
 
+/* ===== shared: BG0 solid red (prio1), BG1 solid green (prio0, front) ======= */
+static void two_bg_solid(void)
+{
+    uint16_t *p = palram();
+    p[0] = c555(2,2,2); p[1] = c555(31,0,0); p[17] = c555(0,31,0);
+    for (int i = 0; i < 32; i++) gGbaVram[i] = 0x11;                 /* tile0 = solid idx1 */
+    uint16_t *m0 = mapat(8 * 0x800); for (int i = 0; i < 32*32; i++) m0[i] = 0;        /* bank0 */
+    uint16_t *m1 = mapat(9 * 0x800); for (int i = 0; i < 32*32; i++) m1[i] = (1 << 12); /* bank1 */
+    wio16(IO_BGCNT(0), (uint16_t)CREATE_BGCNT(0, 8, 1, 0));
+    wio16(IO_BGCNT(1), (uint16_t)CREATE_BGCNT(0, 9, 0, 0));
+}
+
+/* ===== Scene windows: WIN0 rect masking + WINOUT + H-edge clamp ============ */
+static void scene_win_mask(void)
+{
+    unsigned RED = c555(31,0,0), GRN = c555(0,31,0);
+    printf("- windows: WIN0 masking / WINOUT / edge clamp:\n");
+
+    reset_mem(); two_bg_solid();
+    wio16(0x40, (60 << 8) | 120);                 /* WIN0H x1=60 x2=120 */
+    wio16(0x44, (40 << 8) | 100);                 /* WIN0V y1=40 y2=100 */
+    wio16(0x48, 0x0001);                          /* WININ : WIN0 -> BG0 only */
+    wio16(0x4A, 0x0003);                          /* WINOUT: BG0 + BG1 */
+    wio16(IO_DISPCNT, (uint16_t)(DCNT_BG0 | DCNT_BG1 | DCNT_WIN0));
+    gba_ppu_render_frame(fb);
+    chk(90,70,  RED, "inside WIN0: BG1 masked");
+    chk(10,10,  GRN, "outside: BG1 shows");
+    chk(90,30,  GRN, "above WIN0 (y<40)");
+    chk(130,70, GRN, "right of WIN0 (x>=120)");
+
+    wio16(0x40, (200 << 8) | 250);                /* x2=250 > 240 -> clamp to 240 */
+    gba_ppu_render_frame(fb);
+    chk(235,70, RED, "x2>240 clamp: inside near edge");
+    chk(195,70, GRN, "x2>240 clamp: outside");
+
+    wio16(0x40, (120 << 8) | 40);                 /* x2<x1 -> clamp right to 240 */
+    gba_ppu_render_frame(fb);
+    chk(200,70, RED, "x2<x1 clamp: [120,240) inside");
+    chk(60,70,  GRN, "x2<x1 clamp: outside");
+}
+
+/* ===== Scene windows: per-region color-effect-enable (bit5) ================ */
+static void scene_win_effect(void)
+{
+    unsigned GRN = c555(0,31,0), BLACK = c555(0,0,0);
+    printf("- windows: color-effect-enable bit5:\n");
+
+    reset_mem(); two_bg_solid();
+    wio16(0x50, (1 << 1) | (3 << 6));             /* BLDCNT: BG1 first target, darken */
+    wio16(0x54, 16);                              /* BLDY evy=16 (full darken) */
+    wio16(0x40, (60 << 8) | 120);
+    wio16(0x44, (40 << 8) | 100);
+    wio16(0x48, 0x0003 | (1 << 5));               /* WININ : BG0+BG1 + effect ON */
+    wio16(0x4A, 0x0003);                          /* WINOUT: BG0+BG1, effect OFF */
+    wio16(IO_DISPCNT, (uint16_t)(DCNT_BG0 | DCNT_BG1 | DCNT_WIN0));
+    gba_ppu_render_frame(fb);
+    chk(90,70, BLACK, "inside: darken enabled -> black");
+    chk(10,10, GRN,   "outside: darken disabled -> green");
+}
+
 /* ===== Scene OBJ-map: 16x16 sprites, 4bpp & 8bpp, 1D vs 2D mapping, flips === */
 static void scene_obj_map(int map1d)
 {
@@ -265,6 +325,8 @@ int main(void)
     scene_obj_map(1);
     scene_obj_map(0);
     scene_obj_misc();
+    scene_win_mask();
+    scene_win_effect();
 
     printf("\n%s  (%d checks failed)\n", g_fail ? "RESULT: FAIL" : "RESULT: PASS", g_fail);
     return g_fail ? 1 : 0;
