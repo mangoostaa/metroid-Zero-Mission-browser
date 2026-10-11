@@ -19,6 +19,13 @@ struct DMA {
  */
 void DmaTransfer(u8 channel, const void *src, void *dst, u32 len, u8 bitSize)
 {
+#ifdef TARGET_WEB
+    /* Port: there is no DMA controller — copy immediately. The original polls the
+     * DMA ENABLE bit (hardware clears it when done); here it would spin forever. */
+    { u8 *d = (u8 *)dst; const u8 *s = (const u8 *)src; u32 i; (void)channel; (void)bitSize;
+      for (i = 0; i < len; i++) d[i] = s[i]; }
+    return;
+#endif
     volatile struct DMA *regDMA;
     volatile struct DMA *pDma;
     volatile struct DMA *_pDma;
@@ -99,6 +106,13 @@ void DmaTransfer(u8 channel, const void *src, void *dst, u32 len, u8 bitSize)
 #ifdef NON_MATCHING
 void BitFill(u8 channel, u32 value, void *dst, u32 len, u8 bitSize)
 {
+#ifdef TARGET_WEB
+    /* Port: fill immediately (original polls DMA ENABLE -> would spin forever). */
+    { u32 i; (void)channel;
+      if (bitSize == 32) { u32 *d = (u32 *)dst; for (i = 0; i < len / 4; i++) d[i] = value; }
+      else { u16 *d = (u16 *)dst; u16 v = (u16)value; for (i = 0; i < len / 2; i++) d[i] = v; } }
+    return;
+#endif
     // https://decomp.me/scratch/Qei01
 
     volatile struct DMA *regDMA; // sl (swapped with r9)

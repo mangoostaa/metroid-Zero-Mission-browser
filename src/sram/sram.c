@@ -13,6 +13,13 @@ static void SramWriteUncheckedInternal(u8* src, u8* dest, u32 size)
 
 void SramWriteUnchecked(u8* src, u8* dest, u32 size)
 {
+#ifdef TARGET_WEB
+    /* Port: the original copies this routine's machine code into a RAM array and
+     * executes it (runs SRAM access from RAM) — impossible in wasm. Call the
+     * plain-C internal directly. */
+    SramWriteUncheckedInternal(src, dest, size);
+    return;
+#endif
     u16 code[0x40];
     u16* code_ptr;
     u16* func_ptr;
@@ -54,6 +61,10 @@ static u8* SramCheckInternal(u8* src, u8* dest, u32 size)
 
 u8* SramCheck(u8* src, u8* dest, u32 size)
 {
+#ifdef TARGET_WEB
+    /* Port: see SramWriteUnchecked — call the plain-C internal directly. */
+    return SramCheckInternal(src, dest, size);
+#endif
     u16 code[0x60];
     u16* code_ptr;
     u16* func_ptr;

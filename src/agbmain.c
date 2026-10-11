@@ -1,4 +1,5 @@
 #include "syscalls.h"
+#include "init_game.h"
 #include "data/generic_data.h"
 #include "data/menus/language_select_data.h"
 

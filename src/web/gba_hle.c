@@ -62,9 +62,7 @@ int32_t DivarmMod(int32_t denom, int32_t number) { return denom ? number % denom
 
 uint16_t Sqrt(uint32_t n) { return (uint16_t)(uint32_t)sqrtf((float)n); }
 
-/* TODO(Agent1/me): real GBA LZ77/Huffman decompressors. Stubbed for first link. */
-void LZ77UncompVram(const void *src, void *dst) { (void)src; (void)dst; }
-void LZ77UncompWram(const void *src, void *dst) { (void)src; (void)dst; }
+/* GBA BIOS LZ77 decompressors now live in src/web/bios_decompress.c (A3). */
 
 /* TODO(Agent2): audio. Stubbed for first link. */
 uint32_t MidiKey2Freq(uint32_t *wd, uint8_t mk, uint8_t fp) { (void)wd; (void)mk; (void)fp; return 0; }
@@ -93,28 +91,47 @@ unsigned int gEventsTriggered[0x20 / 4];
 unsigned char sTransferRom_After[1];
 unsigned int sSoundDataEntries[0x400]; /* TODO(Agent2): real sound entries table */
 
-/* --- m4a / MP2k sound driver (asm/soundcode.s + audio_internal.s). Stubbed. --- */
-void InitTrack() {}
-void ResetTrack() {}
-void StopMusicOrSound() {}
-void UpdateAudio() {}
+/* --- m4a / MP2k sound driver (asm/soundcode.s + audio_internal.s). Weak stubs
+ *     matching the real signatures (audio/track_internal.h + soundcode.s) so the
+ *     call sites don't trap and Agent 2's real driver overrides them on merge. --- */
+struct TrackData; /* opaque */
+__attribute__((weak)) uint8_t InitTrack(struct TrackData *t, const uint32_t *h) { (void)t; (void)h; return 0; }
+__attribute__((weak)) void ResetTrack(struct TrackData *t) { (void)t; }
+__attribute__((weak)) void StopMusicOrSound(struct TrackData *t) { (void)t; }
+__attribute__((weak)) void UpdateAudio(void) {}
+__attribute__((weak)) int32_t CallGetNoteFrequency(int32_t f, uint32_t p) { (void)p; return f; }
 
-/* Frame yield: the game spins in `do { SYSCALL(2); } while(!vblankflag)` and calls
- * VBlankIntrWait once per frame. Yield to the browser here (Asyncify). The actual
- * VBlank IRQ dispatch (sets the flag + runs per-frame work) is wired next. */
-static void gba_yield(void)
-{
-#ifdef __EMSCRIPTEN__
-    emscripten_sleep(0);
-#endif
-}
+/* --- Symbols exposed once prototypes are correct (previously masked by trapping
+ *     stubs). ARM sound driver + IRQ dispatcher: weak stubs (A2 / unused by the
+ *     web loop, which calls the VBlank handler directly). --- */
+struct SoundChannel;
+__attribute__((weak)) void CallSoundCodeA(struct SoundChannel *ch, uint32_t *b, uint8_t c) { (void)ch; (void)b; (void)c; }
+__attribute__((weak)) uint8_t *CallSoundCodeB(uint32_t *a, uint32_t *b, uint32_t *c, uint8_t d) { (void)a; (void)b; (void)c; (void)d; return 0; }
+__attribute__((weak)) uint8_t *CallSoundCodeC(uint32_t *a, uint32_t *b, uint8_t c) { (void)a; (void)b; (void)c; return 0; }
+__attribute__((weak)) void IntrMain(void) {}
 
-void VBlankIntrWait(void) { gba_yield(); }
+/* Audio constants (linker.ld absolute symbols); u32 so LE low bytes read right as u8/u16. */
+uint32_t gNumMusicPlayers = 9;
+uint32_t gUnk_Audio0x64 = 0x64;
+uint32_t gUnk_Audio0x50 = 0x50;
+uint32_t gUnk_Audio0x194F700 = 0x194F700;
+
+/* More EWRAM arrays (linker.ld), sized to their regions. */
+unsigned int gUnk_02035400[0x800 / 4];
+unsigned int gSramDemoInputData[0x200 / 4];
+unsigned int gSramDemoInputDuration[0x200 / 4];
+
+/* Frame sync: the game spins in `do { SYSCALL(2); } while(!gVBlankRequestFlag)` and
+ * calls VBlankIntrWait once per frame. Both advance one frame via the loop (loop.c),
+ * which runs the game's VBlank handler (which sets the flag) and yields to the browser. */
+extern void gba_frame_tick(void); /* src/web/loop.c */
+
+void VBlankIntrWait(void) { gba_frame_tick(); }
 
 void gba_bios_swi(int num)
 {
-    (void)num; /* SYS_Halt (2) and friends: just yield for now */
-    gba_yield();
+    (void)num; /* SYS_Halt (2): advance one frame (VBlank), then yield */
+    gba_frame_tick();
 }
 
 extern void agbmain(void);
